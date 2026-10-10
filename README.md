@@ -14,4 +14,4 @@ replacement without the subscription.
 Built with Kotlin + Jetpack Compose. Signed with the same release key as
 Brockville Hub. Releases publish an installable APK via GitHub Actions.
 
-Build status: [![Build PillReminder APK](https://github.com/DeadManBP/PillReminder/actions/workflows/build-apk.yml/badge.svg)](https://github.com/DeadManBP/PillReminder/actions/workflows/build-apk.yml)
+<!-- build trigger 2 -->
