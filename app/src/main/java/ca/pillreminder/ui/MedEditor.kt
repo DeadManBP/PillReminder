@@ -50,7 +50,12 @@ fun MedEditorDialog(
             shape = MaterialTheme.shapes.large,
             color = MaterialTheme.colorScheme.background
         ) {
-            Column(Modifier.padding(16.dp)) {
+            Column(
+                Modifier
+                    .padding(16.dp)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         if (initial.name.isBlank()) "Add medication" else "Edit medication",
