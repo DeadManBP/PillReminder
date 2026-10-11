@@ -13,5 +13,3 @@ replacement without the subscription.
 
 Built with Kotlin + Jetpack Compose. Signed with the same release key as
 Brockville Hub. Releases publish an installable APK via GitHub Actions.
-
-<!-- build trigger 2 -->
