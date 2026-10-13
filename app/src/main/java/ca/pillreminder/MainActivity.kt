@@ -183,7 +183,7 @@ class PillState(val ctx: Context) {
             val uri = android.net.Uri.parse(uriStr)
             val ringtone = android.media.RingtoneManager.getRingtone(ctx, uri)
             ringtone?.getTitle(ctx) ?: "Custom sound"
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             "Custom sound"
         }
     }
