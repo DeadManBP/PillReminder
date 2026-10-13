@@ -34,7 +34,9 @@ class MedStore(ctx: Context) {
                     timesMinutes = times.sorted(),
                     daysOfWeek = days,
                     active = o.optBoolean("active", true),
-                    notes = o.optString("notes")
+                    notes = o.optString("notes"),
+                    pillsRemaining = if (o.isNull("pillsRemaining")) null else o.optInt("pillsRemaining"),
+                    refillThreshold = if (o.isNull("refillThreshold")) null else o.optInt("refillThreshold")
                 )
             )
         }
@@ -48,16 +50,17 @@ class MedStore(ctx: Context) {
             for (d in m.daysOfWeek) daysArr.put(d)
             val timesArr = JSONArray()
             for (t in m.timesMinutes) timesArr.put(t)
-            arr.put(
-                JSONObject()
-                    .put("id", m.id)
-                    .put("name", m.name)
-                    .put("dose", m.dose)
-                    .put("times", timesArr)
-                    .put("days", daysArr)
-                    .put("active", m.active)
-                    .put("notes", m.notes)
-            )
+            val jo = JSONObject()
+                .put("id", m.id)
+                .put("name", m.name)
+                .put("dose", m.dose)
+                .put("times", timesArr)
+                .put("days", daysArr)
+                .put("active", m.active)
+                .put("notes", m.notes)
+            if (m.pillsRemaining != null) jo.put("pillsRemaining", m.pillsRemaining) else jo.put("pillsRemaining", JSONObject.NULL)
+            if (m.refillThreshold != null) jo.put("refillThreshold", m.refillThreshold) else jo.put("refillThreshold", JSONObject.NULL)
+            arr.put(jo)
         }
         prefs.edit().putString(KEY_MEDS, arr.toString()).apply()
     }
@@ -73,6 +76,21 @@ class MedStore(ctx: Context) {
 
     fun deleteMed(id: String) {
         saveMeds(loadMeds().filterNot { it.id == id })
+    }
+
+    /**
+     * Decrement pill inventory after a dose is taken.
+     * @return Pair(crossedLowThreshold, hitZero) for refill notifications.
+     */
+    fun decrementPills(medId: String): Pair<Boolean, Boolean> {
+        val med = getMed(medId) ?: return false to false
+        val old = med.pillsRemaining ?: return false to false
+        val new = (old - 1).coerceAtLeast(0)
+        upsertMed(med.copy(pillsRemaining = new))
+        val threshold = med.refillThreshold
+        val crossedLow = threshold != null && old > threshold && new <= threshold
+        val hitZero = old > 0 && new == 0
+        return crossedLow to hitZero
     }
 
     // ---------- Dose log ----------
@@ -145,10 +163,47 @@ class MedStore(ctx: Context) {
         prefs.edit().remove(KEY_PENDING).apply()
     }
 
+    // ---------- One-time daily dose overrides ----------
+
+    /** Key: "medId#timeIndex#yyyy-MM-dd" -> minutes since midnight. */
+    private fun overrideKey(medId: String, timeIndex: Int, dateStr: String) =
+        "$medId#$timeIndex#$dateStr"
+
+    fun getDoseOverride(medId: String, timeIndex: Int, dateStr: String): Int? {
+        val raw = prefs.getString(KEY_OVERRIDES, null) ?: return null
+        val o = JSONObject(raw)
+        val k = overrideKey(medId, timeIndex, dateStr)
+        return if (o.has(k)) o.optInt(k) else null
+    }
+
+    fun setDoseOverride(medId: String, timeIndex: Int, dateStr: String, minutes: Int) {
+        val raw = prefs.getString(KEY_OVERRIDES, null)
+        val o = if (raw != null) JSONObject(raw) else JSONObject()
+        // Purge overrides for past dates to keep the store small.
+        val keys = o.keys()
+        val toRemove = mutableListOf<String>()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val datePart = k.substringAfterLast("#")
+            if (datePart < dateStr) toRemove.add(k)
+        }
+        for (k in toRemove) o.remove(k)
+        o.put(overrideKey(medId, timeIndex, dateStr), minutes)
+        prefs.edit().putString(KEY_OVERRIDES, o.toString()).apply()
+    }
+
+    fun clearDoseOverride(medId: String, timeIndex: Int, dateStr: String) {
+        val raw = prefs.getString(KEY_OVERRIDES, null) ?: return
+        val o = JSONObject(raw)
+        o.remove(overrideKey(medId, timeIndex, dateStr))
+        prefs.edit().putString(KEY_OVERRIDES, o.toString()).apply()
+    }
+
     companion object {
         private const val KEY_MEDS = "meds_v1"
         private const val KEY_LOG = "log_v1"
         private const val KEY_PENDING = "pending_v1"
+        private const val KEY_OVERRIDES = "dose_overrides_v1"
         private const val MAX_LOG = 500
     }
 }

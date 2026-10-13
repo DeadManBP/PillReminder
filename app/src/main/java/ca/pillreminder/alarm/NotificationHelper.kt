@@ -103,6 +103,55 @@ object NotificationHelper {
             .cancel(AlarmScheduler.requestCode(medId, timeIndex))
     }
 
+    /** Low-stock or out-of-stock refill reminder. Not persistent; informational. */
+    fun showRefillAlert(ctx: Context, med: Medication, outOfStock: Boolean) {
+        ensureChannel(ctx)
+        val appCtx = ctx.applicationContext
+
+        val openIntent = Intent(appCtx, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val openPi = PendingIntent.getActivity(
+            appCtx, refillRequestCode(med.id), openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val title = if (outOfStock) "\uD83D\uDEA8 Out of ${med.name}"
+        else "\u26A0\uFE0F Low on ${med.name}"
+        val text = if (outOfStock)
+            "You're out. Time to refill your prescription."
+        else
+            "Only ${med.pillsRemaining} pills left — time to refill."
+
+        val notification = NotificationCompat.Builder(appCtx, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_pill)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(openPi)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(appCtx)
+                .notify(refillRequestCode(med.id), notification)
+        } catch (se: SecurityException) {
+            // Notifications not granted; nothing more to do.
+        }
+    }
+
+    fun cancelRefillAlert(ctx: Context, medId: String) {
+        NotificationManagerCompat.from(ctx.applicationContext)
+            .cancel(refillRequestCode(medId))
+    }
+
+    private fun refillRequestCode(medId: String): Int {
+        val h = "refill#$medId".hashCode()
+        val v = if (h == Int.MIN_VALUE) 0 else kotlin.math.abs(h)
+        // Negative range: dose alarms use non-negative codes.
+        return -(v % 1_000_000_000) - 1
+    }
+
     private fun formatTime(millis: Long): String {
         val fmt = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
         return fmt.format(java.util.Date(millis))

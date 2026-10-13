@@ -130,12 +130,45 @@ class PillState(val ctx: Context) {
         AlarmScheduler.cancelNag(ctx, med.id, timeIndex)
         NotificationHelper.cancel(ctx, med.id, timeIndex)
         AlarmScheduler.scheduleNextOccurrence(ctx, med.id, timeIndex, scheduledAt)
+        if (status == DoseEvent.TAKEN) {
+            val (crossedLow, hitZero) = store.decrementPills(med.id)
+            if (crossedLow || hitZero) {
+                store.getMed(med.id)?.let { updated ->
+                    NotificationHelper.showRefillAlert(ctx, updated, hitZero)
+                }
+            }
+        }
         reload()
     }
 
     fun snoozeDose(med: Medication, timeIndex: Int, scheduledAt: Long) {
         NotificationHelper.cancel(ctx, med.id, timeIndex)
         AlarmScheduler.snooze(ctx, med.id, timeIndex, scheduledAt)
+        reload()
+    }
+
+    /** Shift one dose to a new time for today only. Returns false if the time passed. */
+    fun shiftDoseToday(med: Medication, timeIndex: Int, newMinutes: Int): Boolean {
+        val ok = AlarmScheduler.rescheduleDoseForToday(ctx, med.id, timeIndex, newMinutes)
+        if (ok) reload()
+        return ok
+    }
+
+    fun clearDoseShift(med: Medication, timeIndex: Int) {
+        AlarmScheduler.clearTodayOverride(ctx, med.id, timeIndex)
+        reload()
+    }
+
+    /** Today's one-time override in minutes since midnight, or null. */
+    fun todayOverride(med: Medication, timeIndex: Int): Int? {
+        val todayStr = AlarmScheduler.todayString(System.currentTimeMillis())
+        return store.getDoseOverride(med.id, timeIndex, todayStr)
+    }
+
+    /** Set a new pill count after refilling; clears any refill alert. */
+    fun refillMed(med: Medication, newCount: Int) {
+        store.upsertMed(med.copy(pillsRemaining = newCount.coerceAtLeast(0)))
+        NotificationHelper.cancelRefillAlert(ctx, med.id)
         reload()
     }
 }

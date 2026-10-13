@@ -20,6 +20,7 @@ import ca.pillreminder.minutesLabel
 @Composable
 fun MedsScreen(state: PillState, onEdit: (Medication) -> Unit) {
     var deleteTarget by remember { mutableStateOf<Medication?>(null) }
+    var refillTarget by remember { mutableStateOf<Medication?>(null) }
 
     if (state.meds.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -86,10 +87,32 @@ fun MedsScreen(state: PillState, onEdit: (Medication) -> Unit) {
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
+                    med.pillsRemaining?.let { left ->
+                        val low = med.refillThreshold != null && left <= med.refillThreshold
+                        Text(
+                            when {
+                                left == 0 -> "\uD83D\uDEA8 OUT — refill needed"
+                                low -> "$left pills left — refill soon"
+                                else -> "$left pills left"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                left == 0 -> MaterialTheme.colorScheme.error
+                                low -> Color(0xFFFFB74D)
+                                else -> MaterialTheme.colorScheme.tertiary
+                            }
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
                     ) {
+                        if (med.pillsRemaining != null) {
+                            TextButton(onClick = { refillTarget = med }) {
+                                Text("Refill")
+                            }
+                        }
                         TextButton(onClick = { onEdit(med) }) {
                             Icon(Icons.Filled.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
@@ -119,6 +142,37 @@ fun MedsScreen(state: PillState, onEdit: (Medication) -> Unit) {
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("Keep") }
+            }
+        )
+    }
+
+    refillTarget?.let { med ->
+        var countText by remember(med.id) { mutableStateOf(med.pillsRemaining?.toString() ?: "") }
+        AlertDialog(
+            onDismissRequest = { refillTarget = null },
+            title = { Text("Refill ${med.name}") },
+            text = {
+                OutlinedTextField(
+                    value = countText,
+                    onValueChange = { countText = it.filter { c -> c.isDigit() }.take(5) },
+                    label = { Text("New pill count") },
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    countText.toIntOrNull()?.let { n ->
+                        state.refillMed(med, n)
+                    }
+                    refillTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { refillTarget = null }) { Text("Cancel") }
             }
         )
     }

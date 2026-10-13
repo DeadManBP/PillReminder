@@ -107,10 +107,70 @@ object AlarmScheduler {
     fun scheduleMed(ctx: Context, med: Medication) {
         if (!med.active || med.timesMinutes.isEmpty()) return
         val now = System.currentTimeMillis()
+        val store = MedStore(ctx)
+        val todayStr = todayString(now)
         med.timesMinutes.forEachIndexed { idx, t ->
-            val trigger = nextTrigger(med, t, now)
+            // One-time override for today takes precedence if still in the future.
+            val overrideMin = store.getDoseOverride(med.id, idx, todayStr)
+            val trigger = if (overrideMin != null) {
+                val c = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    set(Calendar.HOUR_OF_DAY, overrideMin / 60)
+                    set(Calendar.MINUTE, overrideMin % 60)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                if (c.timeInMillis > now) c.timeInMillis else nextTrigger(med, t, now)
+            } else {
+                nextTrigger(med, t, now)
+            }
             setAlarm(ctx, med.id, idx, trigger, ACTION_DOSE, false, trigger)
         }
+    }
+
+    /** Shift one dose to [newMinutes] (minutes since midnight) for today only. */
+    fun rescheduleDoseForToday(
+        ctx: Context,
+        medId: String,
+        timeIndex: Int,
+        newMinutes: Int
+    ): Boolean {
+        val store = MedStore(ctx)
+        val med = store.getMed(medId) ?: return false
+        if (!med.active || timeIndex !in med.timesMinutes.indices) return false
+        val now = System.currentTimeMillis()
+        val c = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, newMinutes / 60)
+            set(Calendar.MINUTE, newMinutes % 60)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        if (c.timeInMillis <= now) return false
+        val todayStr = todayString(now)
+        store.setDoseOverride(medId, timeIndex, todayStr, newMinutes)
+        cancelDoseAlarm(ctx, medId, timeIndex)
+        cancelNag(ctx, medId, timeIndex)
+        setAlarm(ctx, medId, timeIndex, c.timeInMillis, ACTION_DOSE, false, c.timeInMillis)
+        return true
+    }
+
+    /** Clear today's one-time shift and re-arm the normal schedule. */
+    fun clearTodayOverride(ctx: Context, medId: String, timeIndex: Int) {
+        val store = MedStore(ctx)
+        val todayStr = todayString(System.currentTimeMillis())
+        store.clearDoseOverride(medId, timeIndex, todayStr)
+        cancelDoseAlarm(ctx, medId, timeIndex)
+        cancelNag(ctx, medId, timeIndex)
+        val med = store.getMed(medId) ?: return
+        if (!med.active || timeIndex !in med.timesMinutes.indices) return
+        val trigger = nextTrigger(med, med.timesMinutes[timeIndex], System.currentTimeMillis())
+        setAlarm(ctx, medId, timeIndex, trigger, ACTION_DOSE, false, trigger)
+    }
+
+    fun todayString(millis: Long): String {
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        return fmt.format(java.util.Date(millis))
     }
 
     /** Cancel everything tracked, then re-arm all active meds. */

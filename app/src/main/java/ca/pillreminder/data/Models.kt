@@ -12,7 +12,11 @@ data class Medication(
     /** Calendar.DAY_OF_WEEK values; empty = every day. */
     val daysOfWeek: Set<Int> = emptySet(),
     val active: Boolean = true,
-    val notes: String = ""
+    val notes: String = "",
+    /** Pills remaining; null = not tracking inventory. */
+    val pillsRemaining: Int? = null,
+    /** Warn to refill when pillsRemaining <= this; null = no warning. */
+    val refillThreshold: Int? = null
 )
 
 /** A logged dose outcome. */

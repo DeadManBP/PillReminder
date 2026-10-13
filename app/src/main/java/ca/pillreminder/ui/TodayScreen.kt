@@ -30,7 +30,11 @@ private data class TodayDose(
     val med: Medication,
     val timeIndex: Int,
     val scheduledAt: Long,
-    val status: DoseStatus
+    val status: DoseStatus,
+    /** Minutes since midnight if shifted for today, else null. */
+    val overrideMinutes: Int? = null,
+    /** Original scheduled minutes (before shift). */
+    val originalMinutes: Int = 0
 )
 
 @Composable
@@ -84,9 +88,11 @@ private fun computeTodayDoses(state: PillState, now: Long): List<TodayDose> {
         if (!med.active) continue
         if (med.daysOfWeek.isNotEmpty() && todayDow !in med.daysOfWeek) continue
         med.timesMinutes.forEachIndexed { idx, t ->
+            val overrideMin = state.todayOverride(med, idx)
+            val useMin = overrideMin ?: t
             val c = (base.clone() as Calendar).apply {
-                set(Calendar.HOUR_OF_DAY, t / 60)
-                set(Calendar.MINUTE, t % 60)
+                set(Calendar.HOUR_OF_DAY, useMin / 60)
+                set(Calendar.MINUTE, useMin % 60)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }
@@ -107,7 +113,7 @@ private fun computeTodayDoses(state: PillState, now: Long): List<TodayDose> {
                     }
                 }
             }
-            out.add(TodayDose(med, idx, at, status))
+            out.add(TodayDose(med, idx, at, status, overrideMin, t))
         }
     }
     return out.sortedWith(compareBy({ it.status != DoseStatus.DUE }, { it.scheduledAt }))
@@ -117,6 +123,7 @@ private fun computeTodayDoses(state: PillState, now: Long): List<TodayDose> {
 private fun DoseCard(dose: TodayDose, state: PillState, now: Long) {
     val med = dose.med
     val due = dose.status == DoseStatus.DUE
+    var showShift by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -134,11 +141,35 @@ private fun DoseCard(dose: TodayDose, state: PillState, now: Long) {
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(med.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    val timeLabel = if (dose.overrideMinutes != null) {
+                        "${minutesLabel(dose.overrideMinutes)} (was ${minutesLabel(dose.originalMinutes)} · today only)"
+                    } else {
+                        minutesLabel(med.timesMinutes[dose.timeIndex])
+                    }
                     val sub = listOfNotNull(
                         med.dose.takeIf { it.isNotBlank() },
-                        minutesLabel(med.timesMinutes[dose.timeIndex])
+                        timeLabel
                     ).joinToString(" · ")
                     Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                    med.pillsRemaining?.let { left ->
+                        val refillText = when {
+                            left == 0 -> "\uD83D\uDEA8 OUT OF STOCK"
+                            med.refillThreshold != null && left <= med.refillThreshold ->
+                                "$left pills left — refill soon"
+                            else -> "$left pills left"
+                        }
+                        Text(
+                            refillText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (left == 0) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+                if (dose.status == DoseStatus.UPCOMING) {
+                    IconButton(onClick = { showShift = true }) {
+                        Icon(Icons.Filled.Schedule, contentDescription = "Shift time for today")
+                    }
                 }
             }
 
@@ -193,6 +224,77 @@ private fun DoseCard(dose: TodayDose, state: PillState, now: Long) {
             }
         }
     }
+
+    if (showShift) {
+        ShiftTimeDialog(
+            dose = dose,
+            onDismiss = { showShift = false },
+            onShift = { newMinutes ->
+                state.shiftDoseToday(med, dose.timeIndex, newMinutes)
+                showShift = false
+            },
+            onReset = {
+                state.clearDoseShift(med, dose.timeIndex)
+                showShift = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShiftTimeDialog(
+    dose: TodayDose,
+    onDismiss: () -> Unit,
+    onShift: (Int) -> Unit,
+    onReset: () -> Unit
+) {
+    val currentMin = dose.overrideMinutes ?: dose.originalMinutes
+    val tpState = rememberTimePickerState(
+        initialHour = currentMin / 60,
+        initialMinute = currentMin % 60,
+        is24Hour = false
+    )
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shift dose — today only") },
+        text = {
+            Column {
+                Text(
+                    "${dose.med.name} · normally ${minutesLabel(dose.originalMinutes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(Modifier.height(8.dp))
+                TimePicker(state = tpState)
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val m = tpState.hour * 60 + tpState.minute
+                val nowCal = Calendar.getInstance()
+                val nowMin = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
+                if (m <= nowMin) {
+                    error = "Pick a time later today."
+                } else {
+                    onShift(m)
+                }
+            }) { Text("Move") }
+        },
+        dismissButton = {
+            Row {
+                if (dose.overrideMinutes != null) {
+                    TextButton(onClick = onReset) { Text("Reset") }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    )
 }
 
 @Composable

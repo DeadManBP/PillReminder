@@ -36,6 +36,9 @@ fun MedEditorDialog(
     var days by remember { mutableStateOf(initial.daysOfWeek.toSet()) }
     var notes by remember { mutableStateOf(initial.notes) }
     var active by remember { mutableStateOf(initial.active) }
+    var trackPills by remember { mutableStateOf(initial.pillsRemaining != null) }
+    var pillsText by remember { mutableStateOf(initial.pillsRemaining?.toString() ?: "") }
+    var thresholdText by remember { mutableStateOf(initial.refillThreshold?.toString() ?: "") }
     var showPicker by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -127,6 +130,33 @@ fun MedEditorDialog(
                         Switch(checked = active, onCheckedChange = { active = it })
                     }
 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Track pill count", modifier = Modifier.weight(1f))
+                        Switch(checked = trackPills, onCheckedChange = { trackPills = it })
+                    }
+                    if (trackPills) {
+                        OutlinedTextField(
+                            value = pillsText,
+                            onValueChange = { pillsText = it.filter { c -> c.isDigit() }.take(5) },
+                            label = { Text("Pills left") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            )
+                        )
+                        OutlinedTextField(
+                            value = thresholdText,
+                            onValueChange = { thresholdText = it.filter { c -> c.isDigit() }.take(5) },
+                            label = { Text("Warn when at or below") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            )
+                        )
+                    }
+
                     error?.let {
                         Text(it, color = MaterialTheme.colorScheme.error)
                     }
@@ -142,9 +172,12 @@ fun MedEditorDialog(
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = {
+                        val pills = if (trackPills) pillsText.toIntOrNull() else null
+                        val threshold = if (trackPills) thresholdText.toIntOrNull() else null
                         when {
                             name.isBlank() -> error = "Give the medication a name."
                             times.isEmpty() -> error = "Add at least one dose time."
+                            trackPills && pills == null -> error = "Enter how many pills are left."
                             else -> onSave(
                                 initial.copy(
                                     name = name.trim(),
@@ -152,7 +185,9 @@ fun MedEditorDialog(
                                     timesMinutes = times.sorted(),
                                     daysOfWeek = days,
                                     notes = notes.trim(),
-                                    active = active
+                                    active = active,
+                                    pillsRemaining = pills,
+                                    refillThreshold = threshold
                                 )
                             )
                         }

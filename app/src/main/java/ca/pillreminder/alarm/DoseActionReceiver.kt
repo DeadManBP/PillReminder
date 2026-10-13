@@ -31,6 +31,12 @@ class DoseActionReceiver : BroadcastReceiver() {
                             scheduledAt = scheduledAt, status = DoseEvent.TAKEN
                         )
                     )
+                    val (crossedLow, hitZero) = store.decrementPills(medId)
+                    if (crossedLow || hitZero) {
+                        store.getMed(medId)?.let { updated ->
+                            NotificationHelper.showRefillAlert(ctx, updated, hitZero)
+                        }
+                    }
                 }
                 finishDose(ctx, store, medId, timeIndex, scheduledAt)
             }
