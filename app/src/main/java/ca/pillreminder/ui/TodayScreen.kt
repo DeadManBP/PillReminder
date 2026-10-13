@@ -241,7 +241,6 @@ private fun DoseCard(dose: TodayDose, state: PillState, now: Long) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ShiftTimeDialog(
     dose: TodayDose,
@@ -250,11 +249,9 @@ private fun ShiftTimeDialog(
     onReset: () -> Unit
 ) {
     val currentMin = dose.overrideMinutes ?: dose.originalMinutes
-    val tpState = rememberTimePickerState(
-        initialHour = currentMin / 60,
-        initialMinute = currentMin % 60,
-        is24Hour = false
-    )
+    var hourText by remember { mutableStateOf((currentMin / 60).toString()) }
+    var minuteText by remember { mutableStateOf((currentMin % 60).toString().padStart(2, '0')) }
+    var isPm by remember { mutableStateOf(currentMin >= 12 * 60) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
@@ -267,22 +264,77 @@ private fun ShiftTimeDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
-                Spacer(Modifier.height(8.dp))
-                TimePicker(state = tpState)
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = hourText,
+                        onValueChange = { hourText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Hour") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Text(":", style = MaterialTheme.typography.titleLarge)
+                    OutlinedTextField(
+                        value = minuteText,
+                        onValueChange = { minuteText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Min") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Row {
+                        FilterChip(
+                            selected = !isPm,
+                            onClick = { isPm = false },
+                            label = { Text("AM") }
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        FilterChip(
+                            selected = isPm,
+                            onClick = { isPm = true },
+                            label = { Text("PM") }
+                        )
+                    }
+                }
                 error?.let {
+                    Spacer(Modifier.height(8.dp))
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                val m = tpState.hour * 60 + tpState.minute
+                val h12 = hourText.toIntOrNull()
+                val m = minuteText.toIntOrNull()
+                if (h12 == null || h12 < 1 || h12 > 12) {
+                    error = "Hour must be 1-12."
+                    return@TextButton
+                }
+                if (m == null || m > 59) {
+                    error = "Minute must be 0-59."
+                    return@TextButton
+                }
+                val h24 = when {
+                    h12 == 12 && !isPm -> 0
+                    h12 == 12 && isPm -> 12
+                    isPm -> h12 + 12
+                    else -> h12
+                }
+                val totalMin = h24 * 60 + m
                 val nowCal = Calendar.getInstance()
                 val nowMin = nowCal.get(Calendar.HOUR_OF_DAY) * 60 + nowCal.get(Calendar.MINUTE)
-                if (m <= nowMin) {
+                if (totalMin <= nowMin) {
                     error = "Pick a time later today."
                 } else {
-                    onShift(m)
+                    onShift(totalMin)
                 }
             }) { Text("Move") }
         },
