@@ -199,11 +199,36 @@ class MedStore(ctx: Context) {
         prefs.edit().putString(KEY_OVERRIDES, o.toString()).apply()
     }
 
+    // ---------- Notification settings ----------
+
+    /** Custom notification sound URI string; null = system default alarm sound. */
+    fun getNotifSoundUri(): String? = prefs.getString(KEY_SOUND, null)
+
+    fun setNotifSoundUri(uri: String?) {
+        prefs.edit().putString(KEY_SOUND, uri).apply()
+    }
+
+    fun isVibrationEnabled(): Boolean = prefs.getBoolean(KEY_VIBRATION, true)
+
+    fun setVibrationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VIBRATION, enabled).apply()
+    }
+
+    /** Hash of the channel config; used to detect when the channel must be recreated. */
+    fun getChannelConfigHash(): String? = prefs.getString(KEY_CHANNEL_HASH, null)
+
+    fun setChannelConfigHash(hash: String) {
+        prefs.edit().putString(KEY_CHANNEL_HASH, hash).apply()
+    }
+
     companion object {
         private const val KEY_MEDS = "meds_v1"
         private const val KEY_LOG = "log_v1"
         private const val KEY_PENDING = "pending_v1"
         private const val KEY_OVERRIDES = "dose_overrides_v1"
+        private const val KEY_SOUND = "notif_sound_v1"
+        private const val KEY_VIBRATION = "notif_vibration_v1"
+        private const val KEY_CHANNEL_HASH = "notif_channel_hash_v1"
         private const val MAX_LOG = 500
     }
 }

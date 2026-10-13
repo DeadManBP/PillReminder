@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -171,6 +172,39 @@ class PillState(val ctx: Context) {
         NotificationHelper.cancelRefillAlert(ctx, med.id)
         reload()
     }
+
+    // ---------- Notification settings ----------
+
+    fun notifSoundUri(): String? = store.getNotifSoundUri()
+
+    fun notifSoundName(): String {
+        val uriStr = store.getNotifSoundUri() ?: return "Default alarm sound"
+        return try {
+            val uri = android.net.Uri.parse(uriStr)
+            val ringtone = android.media.RingtoneManager.getRingtone(ctx, uri)
+            ringtone?.getTitle(ctx) ?: "Custom sound"
+        } catch (_: Exception) {
+            "Custom sound"
+        }
+    }
+
+    fun setNotifSound(uri: String?) {
+        store.setNotifSoundUri(uri)
+        NotificationHelper.syncChannel(ctx)
+        reload()
+    }
+
+    fun vibrationEnabled(): Boolean = store.isVibrationEnabled()
+
+    fun setVibrationEnabled(enabled: Boolean) {
+        store.setVibrationEnabled(enabled)
+        NotificationHelper.syncChannel(ctx)
+        reload()
+    }
+
+    fun testNotification() {
+        NotificationHelper.showTest(ctx)
+    }
 }
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -239,10 +273,17 @@ private fun PillApp(onRequestNotifPermission: () -> Unit) {
     var exactOk by remember { mutableStateOf(AlarmScheduler.canScheduleExact(ctx)) }
     LaunchedEffect(tab) { exactOk = AlarmScheduler.canScheduleExact(ctx) }
 
+    var showSettings by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("\uD83D\uDC80 Pill Reminder") },
+                actions = {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Notification settings")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
@@ -322,6 +363,106 @@ private fun PillApp(onRequestNotifPermission: () -> Unit) {
             }
         )
     }
+
+    if (showSettings) {
+        NotificationSettingsDialog(
+            state = state,
+            onDismiss = { showSettings = false }
+        )
+    }
+}
+
+@Composable
+private fun NotificationSettingsDialog(
+    state: PillState,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    var vibrationOn by remember { mutableStateOf(state.vibrationEnabled()) }
+    var soundName by remember { mutableStateOf(state.notifSoundName()) }
+
+    val pickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val uri = result.data?.getParcelableExtra<android.net.Uri>(
+                android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI
+            )
+            state.setNotifSound(uri?.toString())
+            soundName = state.notifSoundName()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Notification settings") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Sound", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            soundName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                    TextButton(onClick = {
+                        val intent = android.content.Intent(
+                            android.media.RingtoneManager.ACTION_RINGTONE_PICKER
+                        ).apply {
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_TYPE,
+                                android.media.RingtoneManager.TYPE_ALARM
+                            )
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_TITLE,
+                                "Choose alarm sound"
+                            )
+                            val current = state.notifSoundUri()?.let { android.net.Uri.parse(it) }
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                                current
+                            )
+                            putExtra(
+                                android.media.RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT,
+                                false
+                            )
+                        }
+                        pickerLauncher.launch(intent)
+                    }) { Text("Change") }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Vibration", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = vibrationOn,
+                        onCheckedChange = {
+                            vibrationOn = it
+                            state.setVibrationEnabled(it)
+                        }
+                    )
+                }
+                OutlinedButton(
+                    onClick = { state.testNotification() },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Test notification") }
+                Text(
+                    "Changes apply to new notifications. The sound picker shows your alarm sounds.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
 }
 
 // ---------- formatting helpers ----------

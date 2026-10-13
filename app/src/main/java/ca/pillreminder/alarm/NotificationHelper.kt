@@ -16,24 +16,49 @@ object NotificationHelper {
 
     const val CHANNEL_ID = "dose_alarms"
 
-    fun ensureChannel(ctx: Context) {
-        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+    /** Vibration pattern: urgent pulsing. */
+    private val VIBRATE_PATTERN = longArrayOf(0, 800, 400, 800, 400, 1200)
+
+    fun defaultSoundUri(): android.net.Uri =
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+
+    private fun soundUri(ctx: Context): android.net.Uri {
+        val custom = MedStore(ctx).getNotifSoundUri()
+        return if (custom != null) android.net.Uri.parse(custom) else defaultSoundUri()
+    }
+
+    private fun vibrationEnabled(ctx: Context): Boolean =
+        MedStore(ctx).isVibrationEnabled()
+
+    /**
+     * Ensures the channel exists with the current settings. On Android 8+,
+     * channel sound/vibration are immutable after creation, so the channel
+     * is deleted and recreated when settings change.
+     */
+    fun syncChannel(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val store = MedStore(appCtx)
+        val configHash = "${store.getNotifSoundUri() ?: "default"}|${store.isVibrationEnabled()}"
+        val existing = nm.getNotificationChannel(CHANNEL_ID)
+        if (existing != null && store.getChannelConfigHash() == configHash) return
+        // Settings changed (or first run): recreate the channel.
+        try { nm.deleteNotificationChannel(CHANNEL_ID) } catch (_: Exception) {}
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Dose alarms",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Persistent reminders when a dose is due"
-            setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                null
-            )
-            vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 900)
-            enableVibration(true)
+            setSound(soundUri(appCtx), null)
+            vibrationPattern = VIBRATE_PATTERN
+            enableVibration(vibrationEnabled(appCtx))
         }
         nm.createNotificationChannel(channel)
+        store.setChannelConfigHash(configHash)
     }
+
+    fun ensureChannel(ctx: Context) = syncChannel(ctx)
 
     fun showDose(
         ctx: Context,
@@ -42,7 +67,7 @@ object NotificationHelper {
         scheduledAt: Long,
         nagCount: Int
     ) {
-        ensureChannel(ctx)
+        syncChannel(ctx)
         val appCtx = ctx.applicationContext
 
         val openIntent = Intent(appCtx, MainActivity::class.java)
@@ -58,7 +83,7 @@ object NotificationHelper {
         ).joinToString(" · ")
         val text = if (nagCount > 0) "$doseLine — still waiting" else doseLine
 
-        val notification = NotificationCompat.Builder(appCtx, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(appCtx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_pill)
             .setContentTitle("\uD83D\uDC8A Time to take ${med.name}")
             .setContentText(text)
@@ -68,8 +93,11 @@ object NotificationHelper {
             .setAutoCancel(false)
             .setContentIntent(openPi)
             .setFullScreenIntent(openPi, true)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-            .setVibrate(longArrayOf(0, 600, 300, 600, 300, 900))
+            .setSound(soundUri(appCtx))
+        if (vibrationEnabled(appCtx)) {
+            builder.setVibrate(VIBRATE_PATTERN)
+        }
+        val notification = builder
             .addAction(
                 0, "Taken",
                 DoseActionReceiver.actionIntent(
@@ -105,7 +133,7 @@ object NotificationHelper {
 
     /** Low-stock or out-of-stock refill reminder. Not persistent; informational. */
     fun showRefillAlert(ctx: Context, med: Medication, outOfStock: Boolean) {
-        ensureChannel(ctx)
+        syncChannel(ctx)
         val appCtx = ctx.applicationContext
 
         val openIntent = Intent(appCtx, MainActivity::class.java)
@@ -122,7 +150,7 @@ object NotificationHelper {
         else
             "Only ${med.pillsRemaining} pills left — time to refill."
 
-        val notification = NotificationCompat.Builder(appCtx, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(appCtx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_pill)
             .setContentTitle(title)
             .setContentText(text)
@@ -130,13 +158,45 @@ object NotificationHelper {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(openPi)
-            .build()
+            .setSound(soundUri(appCtx))
+        if (vibrationEnabled(appCtx)) {
+            builder.setVibrate(VIBRATE_PATTERN)
+        }
+        val notification = builder.build()
 
         try {
             NotificationManagerCompat.from(appCtx)
                 .notify(refillRequestCode(med.id), notification)
         } catch (se: SecurityException) {
             // Notifications not granted; nothing more to do.
+        }
+    }
+
+    /** Fires a test dose notification so the user can preview sound/vibration. */
+    fun showTest(ctx: Context) {
+        syncChannel(ctx)
+        val appCtx = ctx.applicationContext
+        val openIntent = Intent(appCtx, MainActivity::class.java)
+            .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val openPi = PendingIntent.getActivity(
+            appCtx, -999999, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(appCtx, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_pill)
+            .setContentTitle("\uD83D\uDC8A Test notification")
+            .setContentText("This is how your dose alarms will sound and vibrate.")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(openPi)
+            .setSound(soundUri(appCtx))
+        if (vibrationEnabled(appCtx)) {
+            builder.setVibrate(VIBRATE_PATTERN)
+        }
+        try {
+            NotificationManagerCompat.from(appCtx).notify(-999999, builder.build())
+        } catch (se: SecurityException) {
         }
     }
 
