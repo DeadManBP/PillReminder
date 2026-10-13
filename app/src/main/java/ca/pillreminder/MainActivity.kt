@@ -385,9 +385,9 @@ private fun NotificationSettingsDialog(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val uri = result.data?.getParcelableExtra<android.net.Uri>(
+            val uri = result.data?.getParcelableExtra(
                 android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI
-            )
+            ) as? android.net.Uri
             state.setNotifSound(uri?.toString())
             soundName = state.notifSoundName()
         }

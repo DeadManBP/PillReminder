@@ -44,7 +44,7 @@ object NotificationHelper {
         val existing = nm.getNotificationChannel(CHANNEL_ID)
         if (existing != null && store.getChannelConfigHash() == configHash) return
         // Settings changed (or first run): recreate the channel.
-        try { nm.deleteNotificationChannel(CHANNEL_ID) } catch (_: Exception) {}
+        nm.deleteNotificationChannel(CHANNEL_ID)
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Dose alarms",
