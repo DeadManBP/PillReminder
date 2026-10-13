@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import ca.pillreminder.MainActivity
 import ca.pillreminder.R
+import ca.pillreminder.data.MedStore
 import ca.pillreminder.data.Medication
 
 object NotificationHelper {
