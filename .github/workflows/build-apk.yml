@@ -61,5 +61,5 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Pill Reminder Build ${{ github.run_number }}
-            files: android/app/build/outputs/apk/debug/*.apk
+          files: android/app/build/outputs/apk/debug/*.apk
           
