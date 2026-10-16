@@ -201,6 +201,12 @@ private fun DoseCard(dose: TodayDose, state: PillState, now: Long) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = {
+                        state.markTakenEarly(med, dose.timeIndex, dose.scheduledAt)
+                    }) {
+                        Text("Taken early")
+                    }
                 }
                 DoseStatus.OPEN -> {
                     Text(

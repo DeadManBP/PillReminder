@@ -117,6 +117,13 @@ class PillState(val ctx: Context) {
     fun markTaken(med: Medication, timeIndex: Int, scheduledAt: Long) =
         finishDose(med, timeIndex, scheduledAt, DoseEvent.TAKEN)
 
+    /** Mark an upcoming dose as taken before its scheduled time. */
+    fun markTakenEarly(med: Medication, timeIndex: Int, scheduledAt: Long) {
+        // Cancel today's not-yet-fired alarm so it doesn't nag later.
+        AlarmScheduler.cancelDoseAlarm(ctx, med.id, timeIndex)
+        finishDose(med, timeIndex, scheduledAt, DoseEvent.TAKEN)
+    }
+
     fun markSkipped(med: Medication, timeIndex: Int, scheduledAt: Long) =
         finishDose(med, timeIndex, scheduledAt, DoseEvent.SKIPPED)
 

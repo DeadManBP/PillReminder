@@ -26,42 +26,115 @@ fun HistoryScreen(state: PillState) {
         }
         return
     }
+
+    // Group entries by day (based on when the action was taken).
+    val byDay = remember(state.log) {
+        state.log.groupBy { dayKey(it.actedAt) }
+            .toList()
+            .sortedByDescending { it.first }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(state.log, key = { it.id }) { e ->
-            val (icon, tint, label) = when (e.status) {
-                DoseEvent.TAKEN -> Triple(Icons.Filled.CheckCircle, Color(0xFF66BB6A), "Taken")
-                DoseEvent.SKIPPED -> Triple(Icons.Filled.Cancel, Color(0xFFB0BEC5), "Skipped")
-                else -> Triple(Icons.Filled.AlarmOff, Color(0xFFE57373), "Missed")
+        for ((day, entries) in byDay) {
+            item(key = "header-$day") {
+                DayHeader(day, entries)
             }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(icon, contentDescription = label, tint = tint)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            e.medName + (e.dose.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            "Scheduled ${dateTimeLabel(e.scheduledAt)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
+            items(entries, key = { it.id }) { e ->
+                HistoryEntry(e)
+            }
+        }
+    }
+}
+
+/** yyyy-MM-dd key for grouping. */
+private fun dayKey(millis: Long): String {
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    return fmt.format(java.util.Date(millis))
+}
+
+private fun dayLabel(day: String): String {
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    val date = fmt.parse(day) ?: return day
+    return java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault()).format(date)
+}
+
+@Composable
+private fun DayHeader(day: String, entries: List<DoseEvent>) {
+    val taken = entries.count { it.status == DoseEvent.TAKEN }
+    val total = entries.size
+    val allTaken = taken == total && total > 0
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (allTaken)
+                Color(0xFF1B5E20).copy(alpha = 0.4f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                dayLabel(day),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                if (allTaken) "\u2705 $taken/$total" else "$taken/$total taken",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (allTaken) Color(0xFF66BB6A) else MaterialTheme.colorScheme.secondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryEntry(e: DoseEvent) {
+    val (icon, tint, label) = when (e.status) {
+        DoseEvent.TAKEN -> Triple(Icons.Filled.CheckCircle, Color(0xFF66BB6A), "Taken")
+        DoseEvent.SKIPPED -> Triple(Icons.Filled.Cancel, Color(0xFFB0BEC5), "Skipped")
+        else -> Triple(Icons.Filled.AlarmOff, Color(0xFFE57373), "Missed")
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = label, tint = tint)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    e.medName + (e.dose.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                // Show actual time acted, plus scheduled time for context.
+                val timeLine = when (e.status) {
+                    DoseEvent.TAKEN -> {
+                        val acted = dateTimeLabel(e.actedAt)
+                        val sched = dateTimeLabel(e.scheduledAt)
+                        if (acted == sched) "Taken $acted"
+                        else "Taken $acted (scheduled $sched)"
                     }
-                    Text(label, color = tint, style = MaterialTheme.typography.bodyMedium)
+                    else -> "Scheduled ${dateTimeLabel(e.scheduledAt)}"
                 }
+                Text(
+                    timeLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
+            Text(label, color = tint, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
