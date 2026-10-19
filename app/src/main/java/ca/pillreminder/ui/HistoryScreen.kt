@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,7 +44,7 @@ fun HistoryScreen(state: PillState) {
             item(key = "header-$day") {
                 DayHeader(day, entries)
             }
-            items(entries, key = { it.id }) { e ->
+            items(entries, key = { e: DoseEvent -> e.id }) { e ->
                 HistoryEntry(e)
             }
         }
