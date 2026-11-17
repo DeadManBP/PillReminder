@@ -7,6 +7,8 @@ data class Medication(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val dose: String = "",
+    /** Number of tablets/capsules consumed for each scheduled dose. */
+    val tabletsPerDose: Int = 1,
     /** Minutes since midnight, sorted ascending. */
     val timesMinutes: List<Int> = emptyList(),
     /** Calendar.DAY_OF_WEEK values; empty = every day. */

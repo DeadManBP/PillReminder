@@ -31,7 +31,7 @@ class DoseActionReceiver : BroadcastReceiver() {
                             scheduledAt = scheduledAt, status = DoseEvent.TAKEN
                         )
                     )
-                    val (crossedLow, hitZero) = store.decrementPills(medId)
+                    val (crossedLow, hitZero) = store.decrementPills(medId, med.tabletsPerDose)
                     if (crossedLow || hitZero) {
                         store.getMed(medId)?.let { updated ->
                             NotificationHelper.showRefillAlert(ctx, updated, hitZero)
@@ -70,6 +70,7 @@ class DoseActionReceiver : BroadcastReceiver() {
             store.clearPending()
         }
         AlarmScheduler.cancelNag(ctx, medId, timeIndex)
+        AlarmScheduler.cancelSnoozeAlarm(ctx, medId, timeIndex)
         NotificationHelper.cancel(ctx, medId, timeIndex)
         AlarmScheduler.scheduleNextOccurrence(ctx, medId, timeIndex, scheduledAt)
     }

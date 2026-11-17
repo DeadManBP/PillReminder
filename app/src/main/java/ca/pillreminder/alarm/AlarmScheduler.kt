@@ -17,6 +17,8 @@ import kotlin.math.abs
 object AlarmScheduler {
 
     const val ACTION_DOSE = "ca.pillreminder.action.DOSE"
+    // Separate PendingIntent identity so snoozing cannot replace the next daily dose.
+    const val ACTION_SNOOZE_DOSE = "ca.pillreminder.action.SNOOZE_DOSE"
     const val ACTION_NAG = "ca.pillreminder.action.NAG"
     const val EXTRA_MED_ID = "med_id"
     const val EXTRA_TIME_INDEX = "time_index"
@@ -82,6 +84,10 @@ object AlarmScheduler {
         alarms(ctx).cancel(alarmIntent(ctx, medId, timeIndex, 0L, ACTION_DOSE, false))
     }
 
+    fun cancelSnoozeAlarm(ctx: Context, medId: String, timeIndex: Int) {
+        alarms(ctx).cancel(alarmIntent(ctx, medId, timeIndex, 0L, ACTION_SNOOZE_DOSE, true))
+    }
+
     fun cancelNag(ctx: Context, medId: String, timeIndex: Int) {
         alarms(ctx).cancel(alarmIntent(ctx, medId, timeIndex, 0L, ACTION_NAG, false))
     }
@@ -105,11 +111,20 @@ object AlarmScheduler {
     }
 
     fun scheduleMed(ctx: Context, med: Medication) {
-        if (!med.active || med.timesMinutes.isEmpty()) return
+        if (!med.active || med.timesMinutes.isEmpty()) {
+            med.timesMinutes.indices.forEach { idx ->
+                cancelDoseAlarm(ctx, med.id, idx)
+                cancelSnoozeAlarm(ctx, med.id, idx)
+                cancelNag(ctx, med.id, idx)
+            }
+            return
+        }
         val now = System.currentTimeMillis()
         val store = MedStore(ctx)
         val todayStr = todayString(now)
         med.timesMinutes.forEachIndexed { idx, t ->
+            // A newly saved schedule supersedes any pending snooze for this slot.
+            cancelSnoozeAlarm(ctx, med.id, idx)
             // One-time override for today takes precedence if still in the future.
             val overrideMin = store.getDoseOverride(med.id, idx, todayStr)
             val trigger = if (overrideMin != null) {
@@ -150,6 +165,7 @@ object AlarmScheduler {
         val todayStr = todayString(now)
         store.setDoseOverride(medId, timeIndex, todayStr, newMinutes)
         cancelDoseAlarm(ctx, medId, timeIndex)
+        cancelSnoozeAlarm(ctx, medId, timeIndex)
         cancelNag(ctx, medId, timeIndex)
         setAlarm(ctx, medId, timeIndex, c.timeInMillis, ACTION_DOSE, false, c.timeInMillis)
         return true
@@ -161,6 +177,7 @@ object AlarmScheduler {
         val todayStr = todayString(System.currentTimeMillis())
         store.clearDoseOverride(medId, timeIndex, todayStr)
         cancelDoseAlarm(ctx, medId, timeIndex)
+        cancelSnoozeAlarm(ctx, medId, timeIndex)
         cancelNag(ctx, medId, timeIndex)
         val med = store.getMed(medId) ?: return
         if (!med.active || timeIndex !in med.timesMinutes.indices) return
@@ -180,6 +197,7 @@ object AlarmScheduler {
         meds.forEach { med ->
             med.timesMinutes.indices.forEach { idx ->
                 cancelDoseAlarm(ctx, med.id, idx)
+                cancelSnoozeAlarm(ctx, med.id, idx)
                 cancelNag(ctx, med.id, idx)
             }
         }
@@ -195,11 +213,12 @@ object AlarmScheduler {
     }
 
     fun snooze(ctx: Context, medId: String, timeIndex: Int, scheduledAt: Long, minutes: Long = NAG_DELAY_MIN) {
+        cancelSnoozeAlarm(ctx, medId, timeIndex)
         cancelNag(ctx, medId, timeIndex)
         setAlarm(
             ctx, medId, timeIndex,
             System.currentTimeMillis() + minutes * 60_000L,
-            ACTION_DOSE, true, scheduledAt
+            ACTION_SNOOZE_DOSE, true, scheduledAt
         )
     }
 }

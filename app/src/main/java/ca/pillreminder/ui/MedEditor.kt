@@ -32,6 +32,7 @@ fun MedEditorDialog(
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var dose by remember { mutableStateOf(initial.dose) }
+    var tabletsPerDoseText by remember { mutableStateOf(initial.tabletsPerDose.coerceAtLeast(1).toString()) }
     var times by remember { mutableStateOf(initial.timesMinutes.sorted()) }
     var days by remember { mutableStateOf(initial.daysOfWeek.toSet()) }
     var notes by remember { mutableStateOf(initial.notes) }
@@ -87,9 +88,20 @@ fun MedEditorDialog(
                     OutlinedTextField(
                         value = dose,
                         onValueChange = { dose = it },
-                        label = { Text("Dose (e.g. 1 tablet, 10 mg)") },
+                        label = { Text("Dose details (e.g. 10 mg)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = tabletsPerDoseText,
+                        onValueChange = { tabletsPerDoseText = it.filter { c -> c.isDigit() }.take(3) },
+                        label = { Text("Tablets per dose") },
+                        supportingText = { Text("How many tablets or capsules you take each time") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
                     )
 
                     Text("Dose times *", fontWeight = FontWeight.Bold)
@@ -174,14 +186,17 @@ fun MedEditorDialog(
                     Button(onClick = {
                         val pills = if (trackPills) pillsText.toIntOrNull() else null
                         val threshold = if (trackPills) thresholdText.toIntOrNull() else null
+                        val tabletsPerDose = tabletsPerDoseText.toIntOrNull()
                         when {
                             name.isBlank() -> error = "Give the medication a name."
                             times.isEmpty() -> error = "Add at least one dose time."
+                            tabletsPerDose == null || tabletsPerDose < 1 -> error = "Enter at least 1 tablet per dose."
                             trackPills && pills == null -> error = "Enter how many pills are left."
                             else -> onSave(
                                 initial.copy(
                                     name = name.trim(),
                                     dose = dose.trim(),
+                                    tabletsPerDose = tabletsPerDose,
                                     timesMinutes = times.sorted(),
                                     daysOfWeek = days,
                                     notes = notes.trim(),
