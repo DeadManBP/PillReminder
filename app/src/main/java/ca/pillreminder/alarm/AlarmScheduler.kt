@@ -17,6 +17,8 @@ import kotlin.math.abs
 object AlarmScheduler {
 
     const val ACTION_DOSE = "ca.pillreminder.action.DOSE"
+    // Separate PendingIntent identity so snoozing cannot replace the next daily dose.
+    const val ACTION_SNOOZE_DOSE = "ca.pillreminder.action.SNOOZE_DOSE"
     const val ACTION_NAG = "ca.pillreminder.action.NAG"
     const val EXTRA_MED_ID = "med_id"
     const val EXTRA_TIME_INDEX = "time_index"
@@ -80,6 +82,10 @@ object AlarmScheduler {
 
     fun cancelDoseAlarm(ctx: Context, medId: String, timeIndex: Int) {
         alarms(ctx).cancel(alarmIntent(ctx, medId, timeIndex, 0L, ACTION_DOSE, false))
+    }
+
+    fun cancelSnoozeAlarm(ctx: Context, medId: String, timeIndex: Int) {
+        alarms(ctx).cancel(alarmIntent(ctx, medId, timeIndex, 0L, ACTION_SNOOZE_DOSE, true))
     }
 
     fun cancelNag(ctx: Context, medId: String, timeIndex: Int) {
@@ -180,6 +186,7 @@ object AlarmScheduler {
         meds.forEach { med ->
             med.timesMinutes.indices.forEach { idx ->
                 cancelDoseAlarm(ctx, med.id, idx)
+                cancelSnoozeAlarm(ctx, med.id, idx)
                 cancelNag(ctx, med.id, idx)
             }
         }
@@ -195,11 +202,12 @@ object AlarmScheduler {
     }
 
     fun snooze(ctx: Context, medId: String, timeIndex: Int, scheduledAt: Long, minutes: Long = NAG_DELAY_MIN) {
+        cancelSnoozeAlarm(ctx, medId, timeIndex)
         cancelNag(ctx, medId, timeIndex)
         setAlarm(
             ctx, medId, timeIndex,
             System.currentTimeMillis() + minutes * 60_000L,
-            ACTION_DOSE, true, scheduledAt
+            ACTION_SNOOZE_DOSE, true, scheduledAt
         )
     }
 }
