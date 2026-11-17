@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * All data lives on-device in SharedPreferences as JSON. No account, no network.
@@ -223,6 +225,91 @@ class MedStore(ctx: Context) {
         prefs.edit().putString(KEY_CHANNEL_HASH, hash).apply()
     }
 
+
+    // ---------- Backup and restore ----------
+
+    /** Write a versioned JSON backup containing all app preferences. */
+    fun writeBackup(output: OutputStream) {
+        val values = JSONObject()
+        prefs.all.forEach { (key, value) ->
+            val entry = JSONObject()
+            when (value) {
+                is String -> entry.put("type", "string").put("value", value)
+                is Boolean -> entry.put("type", "boolean").put("value", value)
+                is Int -> entry.put("type", "int").put("value", value)
+                is Long -> entry.put("type", "long").put("value", value)
+                is Float -> entry.put("type", "float").put("value", value.toDouble())
+                is Set<*> -> {
+                    val items = JSONArray()
+                    value.filterIsInstance<String>().forEach { items.put(it) }
+                    entry.put("type", "string_set").put("value", items)
+                }
+                else -> return@forEach
+            }
+            values.put(key, entry)
+        }
+
+        val backup = JSONObject()
+            .put("format", BACKUP_FORMAT)
+            .put("version", BACKUP_VERSION)
+            .put("createdAt", System.currentTimeMillis())
+            .put("preferences", values)
+
+        output.write(backup.toString(2).toByteArray(Charsets.UTF_8))
+        output.flush()
+    }
+
+    /**
+     * Replace app preferences from a validated backup.
+     * Existing data is not touched unless the backup format and core data are valid.
+     */
+    fun restoreBackup(input: InputStream) {
+        val root = JSONObject(input.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        require(root.optString("format") == BACKUP_FORMAT) {
+            "This file is not a Pill Reminder backup."
+        }
+        require(root.optInt("version") == BACKUP_VERSION) {
+            "This backup version is not supported."
+        }
+
+        val values = root.optJSONObject("preferences")
+            ?: throw IllegalArgumentException("Backup data is missing.")
+
+        val medsEntry = values.optJSONObject(KEY_MEDS)
+            ?: throw IllegalArgumentException("The backup does not contain medication data.")
+        require(medsEntry.optString("type") == "string") {
+            "The medication data in this backup is invalid."
+        }
+        JSONArray(medsEntry.optString("value", "[]"))
+
+        values.optJSONObject(KEY_LOG)?.let { logEntry ->
+            if (logEntry.optString("type") == "string") {
+                JSONArray(logEntry.optString("value", "[]"))
+            }
+        }
+
+        val editor = prefs.edit().clear()
+        val keys = values.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val entry = values.optJSONObject(key) ?: continue
+            when (entry.optString("type")) {
+                "string" -> editor.putString(key, entry.optString("value"))
+                "boolean" -> editor.putBoolean(key, entry.optBoolean("value"))
+                "int" -> editor.putInt(key, entry.optInt("value"))
+                "long" -> editor.putLong(key, entry.optLong("value"))
+                "float" -> editor.putFloat(key, entry.optDouble("value").toFloat())
+                "string_set" -> {
+                    val items = entry.optJSONArray("value") ?: JSONArray()
+                    val set = mutableSetOf<String>()
+                    for (i in 0 until items.length()) set.add(items.optString(i))
+                    editor.putStringSet(key, set)
+                }
+            }
+        }
+        check(editor.commit()) { "Android could not save the restored backup." }
+    }
+
     companion object {
         private const val KEY_MEDS = "meds_v1"
         private const val KEY_LOG = "log_v1"
@@ -232,5 +319,7 @@ class MedStore(ctx: Context) {
         private const val KEY_VIBRATION = "notif_vibration_v1"
         private const val KEY_CHANNEL_HASH = "notif_channel_hash_v1"
         private const val MAX_LOG = 500
+        private const val BACKUP_FORMAT = "ca.pillreminder.backup"
+        private const val BACKUP_VERSION = 1
     }
 }
