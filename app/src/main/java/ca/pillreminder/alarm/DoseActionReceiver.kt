@@ -70,6 +70,7 @@ class DoseActionReceiver : BroadcastReceiver() {
             store.clearPending()
         }
         AlarmScheduler.cancelNag(ctx, medId, timeIndex)
+        AlarmScheduler.cancelSnoozeAlarm(ctx, medId, timeIndex)
         NotificationHelper.cancel(ctx, medId, timeIndex)
         AlarmScheduler.scheduleNextOccurrence(ctx, medId, timeIndex, scheduledAt)
     }
