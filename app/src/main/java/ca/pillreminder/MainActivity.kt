@@ -105,6 +105,7 @@ class PillState(val ctx: Context) {
             med.timesMinutes.indices.forEach { idx ->
                 AlarmScheduler.cancelDoseAlarm(ctx, med.id, idx)
                 AlarmScheduler.cancelNag(ctx, med.id, idx)
+                AlarmScheduler.cancelSnoozeAlarm(ctx, med.id, idx)
             }
             val p = pending
             if (p != null && p.medId == med.id) {
