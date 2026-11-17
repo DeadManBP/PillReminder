@@ -31,6 +31,7 @@ class MedStore(ctx: Context) {
                     id = o.optString("id"),
                     name = o.optString("name"),
                     dose = o.optString("dose"),
+                    tabletsPerDose = o.optInt("tabletsPerDose", 1).coerceAtLeast(1),
                     timesMinutes = times.sorted(),
                     daysOfWeek = days,
                     active = o.optBoolean("active", true),
@@ -54,6 +55,7 @@ class MedStore(ctx: Context) {
                 .put("id", m.id)
                 .put("name", m.name)
                 .put("dose", m.dose)
+                .put("tabletsPerDose", m.tabletsPerDose.coerceAtLeast(1))
                 .put("times", timesArr)
                 .put("days", daysArr)
                 .put("active", m.active)
@@ -82,10 +84,10 @@ class MedStore(ctx: Context) {
      * Decrement pill inventory after a dose is taken.
      * @return Pair(crossedLowThreshold, hitZero) for refill notifications.
      */
-    fun decrementPills(medId: String): Pair<Boolean, Boolean> {
+    fun decrementPills(medId: String, amount: Int = 1): Pair<Boolean, Boolean> {
         val med = getMed(medId) ?: return false to false
         val old = med.pillsRemaining ?: return false to false
-        val new = (old - 1).coerceAtLeast(0)
+        val new = (old - amount.coerceAtLeast(1)).coerceAtLeast(0)
         upsertMed(med.copy(pillsRemaining = new))
         val threshold = med.refillThreshold
         val crossedLow = threshold != null && old > threshold && new <= threshold
