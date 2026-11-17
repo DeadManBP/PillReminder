@@ -190,6 +190,23 @@ class PillState(val ctx: Context) {
         reload()
     }
 
+    fun exportBackup(uri: Uri) {
+        val output = ctx.contentResolver.openOutputStream(uri)
+            ?: throw IllegalStateException("Could not open the selected backup location.")
+        output.use { store.writeBackup(it) }
+    }
+
+    fun restoreBackup(uri: Uri) {
+        val input = ctx.contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("Could not open the selected backup file.")
+        input.use { store.restoreBackup(it) }
+        // A pending notification belongs to the old installation and cannot be restored.
+        store.clearPending()
+        NotificationHelper.syncChannel(ctx)
+        AlarmScheduler.scheduleAll(ctx)
+        reload()
+    }
+
     // ---------- Notification settings ----------
 
     fun notifSoundUri(): String? = store.getNotifSoundUri()
@@ -398,6 +415,28 @@ private fun NotificationSettingsDialog(
     var vibrationOn by remember { mutableStateOf(state.vibrationEnabled()) }
     var soundName by remember { mutableStateOf(state.notifSoundName()) }
 
+    var backupMessage by remember { mutableStateOf<String?>(null) }
+    var restoreUri by remember { mutableStateOf<Uri?>(null) }
+
+    val exportBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            backupMessage = try {
+                state.exportBackup(uri)
+                "Backup saved successfully."
+            } catch (e: Exception) {
+                "Backup failed: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    val importBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) restoreUri = uri
+    }
+
     val pickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -469,6 +508,36 @@ private fun NotificationSettingsDialog(
                     onClick = { state.testNotification() },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Test notification") }
+
+                HorizontalDivider()
+                Text("Backup & restore", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Save a backup file before uninstalling. Restore it after installing the updated app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            exportBackupLauncher.launch("PillReminder-backup.json")
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Export backup") }
+                    OutlinedButton(
+                        onClick = {
+                            importBackupLauncher.launch(arrayOf("application/json", "text/plain"))
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Restore backup") }
+                }
+                backupMessage?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (it.startsWith("Backup failed")) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.tertiary
+                    )
+                }
                 Text(
                     "Changes apply to new notifications. The sound picker shows your alarm sounds.",
                     style = MaterialTheme.typography.bodySmall,
@@ -480,6 +549,32 @@ private fun NotificationSettingsDialog(
             TextButton(onClick = onDismiss) { Text("Done") }
         }
     )
+
+    restoreUri?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { restoreUri = null },
+            title = { Text("Restore backup?") },
+            text = {
+                Text(
+                    "This replaces the medications, pill counts, reminder settings and dose history currently on this device. This cannot be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    backupMessage = try {
+                        state.restoreBackup(uri)
+                        "Backup restored successfully. Your reminders have been rescheduled."
+                    } catch (e: Exception) {
+                        "Restore failed: ${e.message ?: "unknown error"}"
+                    }
+                    restoreUri = null
+                }) { Text("Restore") }
+            },
+            dismissButton = {
+                TextButton(onClick = { restoreUri = null }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 // ---------- formatting helpers ----------
