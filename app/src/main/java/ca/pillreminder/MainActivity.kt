@@ -76,6 +76,12 @@ class PillState(val ctx: Context) {
 
     fun saveMed(med: Medication) {
         val clean = med.copy(timesMinutes = med.timesMinutes.sorted().distinct())
+        // Clear every previous slot first, including slots removed by an edit.
+        store.getMed(clean.id)?.timesMinutes?.indices?.forEach { idx ->
+            AlarmScheduler.cancelDoseAlarm(ctx, clean.id, idx)
+            AlarmScheduler.cancelSnoozeAlarm(ctx, clean.id, idx)
+            AlarmScheduler.cancelNag(ctx, clean.id, idx)
+        }
         store.upsertMed(clean)
         AlarmScheduler.scheduleMed(ctx, clean)
         reload()
