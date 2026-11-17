@@ -149,7 +149,7 @@ class PillState(val ctx: Context) {
         NotificationHelper.cancel(ctx, med.id, timeIndex)
         AlarmScheduler.scheduleNextOccurrence(ctx, med.id, timeIndex, scheduledAt)
         if (status == DoseEvent.TAKEN) {
-            val (crossedLow, hitZero) = store.decrementPills(med.id)
+            val (crossedLow, hitZero) = store.decrementPills(med.id, med.tabletsPerDose)
             if (crossedLow || hitZero) {
                 store.getMed(med.id)?.let { updated ->
                     NotificationHelper.showRefillAlert(ctx, updated, hitZero)
